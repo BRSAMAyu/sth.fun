@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五子棋-byBRSAMA</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        canvas {
+            border: 1px solid #000;
+            margin-top: 20px;
+        }
+        .hidden {
+            display: none;
+        }
+        #thinking-icon {
+            display: none;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>五子棋-byBRSAMA</h1>
+    <div id="start-screen">
+        <h2>选择游戏模式</h2>
+        <label for="player1">玩家1昵称：</label>
+        <input type="text" id="player1" placeholder="输入昵称喵"><br><br>
+        <div id="player2-input" class="hidden">
+            <label for="player2">玩家2昵称：</label>
+            <input type="text" id="player2" placeholder="输入昵称喵"><br><br>
+        </div>
+        <button onclick="startGame('pvp')">Player vs Player</button>
+        <button onclick="startGame('pve')">Player vs AI</button>
+    </div>
+    <div id="game-screen" class="hidden">
+        <canvas id="chessboard" width="600" height="600"></canvas>
+        <div id="status"></div>
+        <img id="thinking-icon" src="https://i.gifer.com/YCZH.gif" alt="AI Thinking" width="50">
+        <button onclick="resetGame()">重新开始</button>
+    </div>
+    <div id="winner-screen" class="hidden">
+        <h2 id="winner-message"></h2>
+        <h3>恭喜你勇者✨可以从魔王的宝库中挑选一件藏品：</h3>
+        <button onclick="goToReward('game')">动漫电影推荐</button>
+        <button onclick="goToReward('movie')">电影推荐</button>
+        <button onclick="goToReward('anime')">动漫推荐</button>
+    </div>
+
+    <script>
+       let board, currentPlayer, chessboard, context, gameOver, mode, player1Name, player2Name;
+        const BOARD_SIZE = 15;
+        const EMPTY = 0, BLACK = 1, WHITE = 2;
+        const DIRECTIONS = [[1, 0], [0, 1], [1, 1], [1, -1]];
+        const SCORE_MAP = new Map([
+            ["11111", 100000], // 五连
+            ["011110", 50000], // 活四
+            ["0111010", 50000], // 活四变种
+            ["1011101", 50000], // 活四变种
+            ["011112", 10000], // 冲四
+            ["211110", 10000], // 冲四
+            ["01110", 5000],   // 活三
+            ["010110", 5000],  // 活三变种
+            ["011010", 5000],  // 活三变种
+            ["10011", 1000],   // 眠三
+            ["10110", 1000],   // 眠三
+            ["11001", 1000],   // 眠三
+            ["2011102", 1000], // 眠三
+            ["0110", 500],     // 活二
+            ["01010", 500],    // 活二变种
+            ["010010", 500],   // 活二变种
+        ]);
+        document.addEventListener('DOMContentLoaded', () => {
+            chessboard = document.getElementById('chessboard');
+            context = chessboard.getContext('2d');
+            chessboard.addEventListener('click', handleClick);
+            initGame();
+        });
+
+        function initGame() {
+            board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(EMPTY));
+            currentPlayer = BLACK;
+            gameOver = false;
+            drawBoard();
+        }
+
+        function drawBoard() {
+            context.clearRect(0, 0, chessboard.width, chessboard.height);
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                context.moveTo(i * 40 + 20, 20);
+                context.lineTo(i * 40 + 20, 580);
+                context.moveTo(20, i * 40 + 20);
+                context.lineTo(580, i * 40 + 20);
+            }
+            context.stroke();
+        }
+
+        function startGame(selectedMode) {
+            mode = selectedMode;
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            player1Name = document.getElementById('player1').value || '玩家1';
+            if (mode === 'pvp') {
+                player2Name = document.getElementById('player2').value || '玩家2';
+                alert(`${player1Name} vs ${player2Name}，試合開始！`);
+            } else {
+                player2Name = 'AI';
+                alert(`${player1Name} vs AI，試合開始！`);
+            }
+            initGame();
+            updateStatus();
+        }
+
+        function handleClick(event) {
+            if (gameOver || (mode === 'pve' && currentPlayer === WHITE)) return;
+
+            const rect = chessboard.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            const row = Math.floor(y / 40);
+            const col = Math.floor(x / 40);
+
+            if (board[row][col] === EMPTY) {
+                makeMove(row, col);
+
+                if (mode === 'pve' && !gameOver) {
+                    aiMove();
+                }
+            }
+        }
+
+        function makeMove(row, col) {
+            board[row][col] = currentPlayer;
+            drawPiece(row, col, currentPlayer);
+
+            if (checkWin(row, col)) {
+                gameOver = true;
+                const winner = currentPlayer === BLACK ? player1Name : player2Name;
+                alert(`${winner}勝利！`);
+                document.getElementById('game-screen').classList.add('hidden');
+                document.getElementById('winner-screen').classList.remove('hidden');
+                document.getElementById('winner-message').innerText = `${winner} 勝利！`;
+            } else {
+                currentPlayer = currentPlayer === BLACK ? WHITE : BLACK;
+                updateStatus();
+            }
+        }
+
+        function drawPiece(row, col, color) {
+            context.beginPath();
+            const centerX = col * 40 + 20;
+            const centerY = row * 40 + 20;
+            context.arc(centerX, centerY, 18, 0, 2 * Math.PI);
+            context.fillStyle = color === BLACK ? "#000" : "#FFF";
+            context.fill();
+            context.stroke();
+        }
+
+        function checkWin(row, col) {
+            const color = board[row][col];
+            return DIRECTIONS.some(([dx, dy]) => {
+                let count = 1;
+                for (let i = 1; i < 5; i++) {
+                    const r = row + i * dx, c = col + i * dy;
+                    if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE || board[r][c] !== color) break;
+                    count++;
+                }
+                for (let i = 1; i < 5; i++) {
+                    const r = row - i * dx, c = col - i * dy;
+                    if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE || board[r][c] !== color) break;
+                    count++;
+                }
+                return count >= 5;
+            });
+        }
+        function evaluateBoard() {
+            let score = 0;
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] !== EMPTY) {
+                        score += evaluatePosition(r, c);
+                    }
+                }
+            }
+            return score;
+        }
+
+        function evaluatePosition(row, col) {
+            const color = board[row][col];
+            let score = 0;
+
+            DIRECTIONS.forEach(([dx, dy]) => {
+                const line = getLine(row, col, dx, dy);
+                score += evaluateLine(line, color);
+            });
+
+            return color === WHITE ? score : -score;
+        }
+
+        function getLine(row, col, dx, dy) {
+            let line = '';
+            for (let i = -4; i <= 4; i++) {
+                const r = row + i * dx;
+                const c = col + i * dy;
+                if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE) {
+                    line += '2'; // 边界用2表示
+                } else {
+                    line += board[r][c];
+                }
+            }
+            return line;
+        }
+
+        function evaluateLine(line, color) {
+            let score = 0;
+            const opponent = color === BLACK ? WHITE : BLACK;
+
+            for (const [pattern, value] of SCORE_MAP) {
+                const regex = new RegExp(pattern.replace(/1/g, color).replace(/2/g, opponent), 'g');
+                const matches = line.match(regex);
+                if (matches) {
+                    score += value * matches.length;
+                }
+            }
+
+            return score;
+        }
+
+        function aiMove() {
+            if (gameOver) return;
+
+            // 检查是否有紧急防守点
+            const defensiveMove = findDefensiveMove();
+            if (defensiveMove) {
+                makeMove(defensiveMove.row, defensiveMove.col);
+                return;
+            }
+
+            // 如果没有紧急防守点，使用minimax算法
+            const depth = 3;
+            const bestMove = minimax(depth, -Infinity, Infinity, true);
+            if (bestMove) {
+                makeMove(bestMove.row, bestMove.col);
+            }
+        }
+
+        function findDefensiveMove() {
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] === EMPTY) {
+                        if (isWinningMove(r, c, BLACK) || isNearWinningMove(r, c, BLACK)) {
+                            return { row: r, col: c };
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        function isWinningMove(row, col, color) {
+            board[row][col] = color;
+            const isWinning = checkWin(row, col);
+            board[row][col] = EMPTY;
+            return isWinning;
+        }
+
+        function isNearWinningMove(row, col, color) {
+            return DIRECTIONS.some(([dx, dy]) => {
+                let count = 1;
+                for (let i = 1; i < 4; i++) {
+                    const r = row + i * dx, c = col + i * dy;
+                    if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE || board[r][c] !== color) break;
+                    count++;
+                }
+                for (let i = 1; i < 4; i++) {
+                    const r = row - i * dx, c = col - i * dy;
+                    if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE || board[r][c] !== color) break;
+                    count++;
+                }
+                return count >= 4;
+            });
+        }
+
+        function minimax(depth, alpha, beta, isMaximizing) {
+            if (depth === 0) {
+                return { score: evaluateBoard() };
+            }
+
+            const moves = getAvailableMoves();
+            if (moves.length === 0) {
+                return { score: 0 };
+            }
+
+            let bestScore = isMaximizing ? -Infinity : Infinity;
+            let bestMove = null;
+
+            for (const move of moves) {
+                board[move.row][move.col] = isMaximizing ? WHITE : BLACK;
+                const score = minimax(depth - 1, alpha, beta, !isMaximizing).score;
+                board[move.row][move.col] = EMPTY;
+
+                if (isMaximizing) {
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMove = move;
+                    }
+                    alpha = Math.max(alpha, bestScore);
+                } else {
+                    if (score < bestScore) {
+                        bestScore = score;
+                        bestMove = move;
+                    }
+                    beta = Math.min(beta, bestScore);
+                }
+
+                if (beta <= alpha) {
+                    break;
+                }
+            }
+
+            return bestMove ? { ...bestMove, score: bestScore } : { score: bestScore };
+        }
+
+        function getAvailableMoves() {
+            const moves = [];
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] === EMPTY && hasNeighbor(r, c)) {
+                        moves.push({ row: r, col: c });
+                    }
+                }
+            }
+            return moves;
+        }
+
+        function hasNeighbor(row, col) {
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    if (i === 0 && j === 0) continue;
+                    const r = row + i, c = col + j;
+                    if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] !== EMPTY) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function aiMove() {
+            if (gameOver) return;
+
+            const thinkingIcon = document.getElementById('thinking-icon');
+            thinkingIcon.style.display = 'block';  // Show the thinking icon
+
+            setTimeout(() => {
+                // Minimax or other AI logic here
+                const depth = 3;
+                const bestMove = minimax(depth, -Infinity, Infinity, true);
+                if (bestMove) {
+                    makeMove(bestMove.row, bestMove.col);
+                }
+                thinkingIcon.style.display = 'none';  // Hide the thinking icon after AI makes a move
+            }, 1000); // Simulate AI thinking for 1 second
+        }
+
+        function resetGame() {
+            document.getElementById('winner-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            initGame();
+            updateStatus();
+        }
+
+        function updateStatus() {
+            const statusElement = document.getElementById('status');
+            const currentPlayerName = currentPlayer === BLACK ? player1Name : player2Name;
+            statusElement.textContent = `当前轮到: ${currentPlayerName} (${currentPlayer === BLACK ? "黑" : "白"}子)`;
+        }
+
+        function goToReward(rewardType) {
+            let url = '';
+            switch (rewardType) {
+                case 'game':
+                    url = 'https://pan.quark.cn/s/ec03bc26747f'; // Replace with your URL
+                    break;
+                case 'movie':
+                    url = 'https://pan.quark.cn/s/391d170247f9'; // Replace with your URL
+                    break;
+                case 'anime':
+                    url = 'https://pan.quark.cn/s/84beb86299cd'; // Replace with your URL
+                    break;
+            }
+            window.location.href = url;
+        }
+    </script>
+</body>
+</html>
